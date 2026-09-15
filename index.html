@@ -4,14 +4,16 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
 
+    <!-- Information -->
     <title>ScoreViewer</title>
+    <meta name="author" content="aidanelm" />
+    <meta
+      name="description"
+      content="Provides scores for certain Pennsylvania sports teams."
+    />
 
     <!-- Favicon -->
-    <link
-      rel="icon"
-      type="image/png"
-      href="https://cdn-icons-png.flaticon.com/512/857/857455.png"
-    />
+    <link rel="icon" type="image/png" href="favicon.png" />
 
     <!-- Bootstrap -->
     <link
@@ -27,99 +29,14 @@
       rel="stylesheet"
     />
 
-    <style>
-      body {
-        background: #363636;
-        font-family: "Google Sans", sans-serif;
-      }
-
-      main {
-        padding-top: 24px;
-      }
-
-      .score-card {
-        min-height: 190px;
-        border: 0;
-        border-radius: 10px;
-        overflow: hidden;
-        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
-      }
-
-      .team-name {
-        padding: 15px 16px 5px;
-        font-size: 0.98rem;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.035em;
-        opacity: 0.95;
-      }
-
-      .matchup {
-        padding: 12px 16px 18px;
-      }
-
-      .team {
-        min-width: 0;
-        flex: 1;
-      }
-
-      .team-name-large {
-        overflow: hidden;
-        font-size: 1rem;
-        font-weight: 700;
-        white-space: nowrap;
-        text-overflow: ellipsis;
-      }
-
-      .score {
-        font-size: 2.5rem;
-        font-weight: 800;
-        line-height: 1;
-        letter-spacing: -0.05em;
-      }
-
-      .at {
-        margin: 0 10px;
-        font-size: 1rem;
-        font-weight: 700;
-        opacity: 0.55;
-      }
-
-      .game-info {
-        padding-top: 24px;
-        color: rgba(255, 255, 255, 0.72);
-        font-size: 0.75rem;
-        font-weight: 600;
-        text-align: center;
-      }
-
-      .loading {
-        font-size: 0.9rem;
-        opacity: 0.7;
-      }
-
-      .footer {
-        padding: 28px 0;
-        color: #ebebeb;
-        font-size: 0.75rem;
-        text-align: center;
-      }
-
-      @media (max-width: 575px) {
-        .score-card {
-          min-height: 175px;
-        }
-
-        .score {
-          font-size: 2.25rem;
-        }
-      }
-    </style>
+    <!-- CSS Stylesheet -->
+    <link rel="stylesheet" href="main.css" />
   </head>
 
   <body>
     <main class="container pb-4">
       <div class="row g-3">
+        <!-- Philadelphia Phillies — MLB -->
         <div class="col-md-6 col-lg-4">
           <div class="score-card" style="background: #c8102e; color: #fff">
             <div class="team-name">Philadelphia Phillies</div>
@@ -129,6 +46,7 @@
           </div>
         </div>
 
+        <!-- Philadelphia 76ers — NBA -->
         <div class="col-md-6 col-lg-4">
           <div class="score-card" style="background: #006bb6; color: #fff">
             <div class="team-name">Philadelphia 76ers</div>
@@ -138,6 +56,7 @@
           </div>
         </div>
 
+        <!-- Philadelphia Eagles — NFL -->
         <div class="col-md-6 col-lg-4">
           <div class="score-card" style="background: #004c54; color: #fff">
             <div class="team-name">Philadelphia Eagles</div>
@@ -147,6 +66,7 @@
           </div>
         </div>
 
+        <!-- Philadelphia Flyers — NHL -->
         <div class="col-md-6 col-lg-4">
           <div class="score-card" style="background: #f74902; color: #fff">
             <div class="team-name">Philadelphia Flyers</div>
@@ -156,6 +76,7 @@
           </div>
         </div>
 
+        <!-- Philadelphia Union — MLS - Different API -->
         <div class="col-md-6 col-lg-4">
           <div class="score-card" style="background: #071b2c; color: #fff">
             <div class="team-name">Philadelphia Union</div>
@@ -165,6 +86,7 @@
           </div>
         </div>
 
+        <!-- St. Joseph's Hawks — Men's College Basketball -->
         <div class="col-md-6 col-lg-4">
           <div class="score-card" style="background: #9e1b32; color: #fff">
             <div class="team-name">Saint Joseph's Men's Basketball</div>
@@ -174,6 +96,7 @@
           </div>
         </div>
 
+        <!-- West Chester Golden Rams — College Football -->
         <div class="col-md-6 col-lg-4">
           <div class="score-card" style="background: #512d6d; color: #fff">
             <div class="team-name">West Chester Football</div>
@@ -187,88 +110,7 @@
       <div class="footer">ScoreViewer</div>
     </main>
 
-    <script>
-      const ESPN = "https://site.api.espn.com/apis/site/v2/sports";
-
-      async function load(id, sport, league, team) {
-        const el = document.getElementById(id);
-
-        try {
-          const url = `${ESPN}/${sport}/${league}/teams/${team}/schedule`;
-          const response = await fetch(url);
-
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-          }
-
-          const data = await response.json();
-          const games = data.events || [];
-          const now = Date.now();
-
-          const game =
-            games.find((g) => g.competitions[0].status.type.state === "in") ||
-            games.find((g) => new Date(g.date).getTime() >= now) ||
-            games[games.length - 1];
-
-          if (!game) {
-            el.textContent = "No games.";
-            return;
-          }
-
-          const competition = game.competitions[0];
-          const teams = competition.competitors;
-
-          const away = teams.find((t) => t.homeAway === "away");
-          const home = teams.find((t) => t.homeAway === "home");
-
-          const date = new Date(game.date).toLocaleDateString(undefined, {
-            weekday: "short",
-            month: "short",
-            day: "numeric",
-          });
-
-          const time = new Date(game.date).toLocaleTimeString(undefined, {
-            hour: "numeric",
-            minute: "2-digit",
-          });
-
-          el.innerHTML = `
-            <div class="d-flex align-items-center">
-              <div class="team text-center">
-                <div class="score">${away.score ?? "—"}</div>
-                <div class="team-name-large">
-                  ${away.team.shortDisplayName}
-                </div>
-              </div>
-
-              <div class="at">@</div>
-
-              <div class="team text-center">
-                <div class="score">${home.score ?? "—"}</div>
-                <div class="team-name-large">
-                  ${home.team.shortDisplayName}
-                </div>
-              </div>
-            </div>
-
-            <div class="game-info">
-              ${date} · ${time}
-            </div>
-          `;
-        } catch (error) {
-          console.error(error);
-          el.textContent = "Unable to load.";
-        }
-      }
-
-      load("eagles", "football", "nfl", "phi");
-      load("phillies", "baseball", "mlb", "phi");
-      load("sixers", "basketball", "nba", "phi");
-      load("flyers", "hockey", "nhl", "phi");
-      load("union", "soccer", "usa.1", "phi");
-
-      load("sju", "basketball", "mens-college-basketball", 2603);
-      load("wcu", "football", "college-football", 223);
-    </script>
+    <!-- JavaScript Functionality -->
+    <script src="main.js"></script>
   </body>
 </html>
