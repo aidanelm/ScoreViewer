@@ -3,8 +3,7 @@ Author: aidanelm
 File: main.js
 Date: 2026-09-15
 Description: JavaScript functionality for ScoreViewer page.
-Uses Scoreboard API for today's games with Schedule API fallbacks, 
-alongside a dedicated scoreboard loader for Philadelphia Union.
+Uses Scoreboard API for today's games with Schedule API fallbacks.
 */
 
 const ESPN_API_BASE = "https://site.api.espn.com/apis/site/v2/sports";
@@ -192,72 +191,6 @@ async function load(id, sport, league, team) {
   }
 }
 
-/**
- * Load and display the next/current Philadelphia Union match.
- * Custom implementation required for MLS date-ranged scoreboard filtering.
- */
-async function loadUnion(id) {
-  const element = document.getElementById(id);
-
-  if (!element) {
-    console.warn(`Unable to find element with ID "${id}".`);
-    return;
-  }
-
-  const UNION_ID = "10739";
-  const ESPN_SCOREBOARD_URL = `${ESPN_API_BASE}/soccer/usa.1/scoreboard`;
-
-  try {
-    const now = new Date();
-    const startDate = formatDate(now);
-
-    const endDateObject = new Date(now);
-    endDateObject.setDate(endDateObject.getDate() + 30);
-    const endDate = formatDate(endDateObject);
-
-    const url = `${ESPN_SCOREBOARD_URL}?dates=${startDate}-${endDate}`;
-
-    const response = await fetch(url);
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    const data = await response.json();
-    const events = data.events || [];
-
-    const unionGames = events.filter((event) => {
-      const competitors = event.competitions?.[0]?.competitors || [];
-      return competitors.some(
-        (competitor) => String(competitor.team?.id) === UNION_ID,
-      );
-    });
-
-    const liveGame = unionGames.find((event) => {
-      return event.competitions?.[0]?.status?.type?.state === "in";
-    });
-
-    const upcomingGames = unionGames
-      .filter((event) => {
-        const gameDate = new Date(event.date);
-        return !Number.isNaN(gameDate.getTime()) && gameDate > now;
-      })
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-    const game = liveGame || upcomingGames[0];
-
-    if (!game) {
-      element.textContent = "No upcoming games.";
-      return;
-    }
-
-    renderGame(element, game);
-  } catch (error) {
-    console.error("Union schedule error:", error);
-    element.textContent = "Unable to load.";
-  }
-}
-
 /*
  * TEAM SCHEDULE CALLS
  */
@@ -265,6 +198,5 @@ load("phillies", "baseball", "mlb", "phi");
 load("sixers", "basketball", "nba", "phi");
 load("eagles", "football", "nfl", "phi");
 load("flyers", "hockey", "nhl", "phi");
-loadUnion("union");
 load("sju", "basketball", "mens-college-basketball", 2603);
 load("wcu", "football", "college-football", 223);
