@@ -7,6 +7,7 @@ Uses Scoreboard API for today's games with Schedule API fallbacks.
 */
 
 const ESPN_API_BASE = "https://site.api.espn.com/apis/site/v2/sports";
+const recordCache = new Map();
 
 /**
  * Helper to parse score value regardless of structure returned.
@@ -21,52 +22,40 @@ function parseScore(competitor) {
 
 /**
  * Helper to generate status text (Final, Innings, Quarters/Periods).
- * Returns empty string if the game hasn't started yet.
  */
 function getStatusDisplay(status) {
   const state = status?.type?.state;
   const detail = status?.type?.shortDetail || status?.type?.detail || "";
 
-  // 1. Post-Game States
   if (state === "post") {
     return detail.includes("OT") ? "FINAL / OT" : "FINAL";
   }
 
-  // 2. In-Game (Live) States
   if (state === "in") {
     const period = status?.period;
+    const lowerDetail = detail.toLowerCase();
 
-    // Baseball logic (Innings)
     if (
-      detail.toLowerCase().includes("top") ||
-      detail.toLowerCase().includes("bot") ||
-      detail.toLowerCase().includes("mid") ||
-      detail.toLowerCase().includes("end")
+      ["top", "bot", "mid", "end"].some((term) => lowerDetail.includes(term))
     ) {
-      if (detail.toLowerCase().includes("top")) return `Top ${period}`;
-      if (detail.toLowerCase().includes("bot")) return `Bottom ${period}`;
-      if (detail.toLowerCase().includes("mid")) return `Mid ${period}`;
-      if (detail.toLowerCase().includes("end")) return `End ${period}`;
+      if (lowerDetail.includes("top")) return `Top ${period}`;
+      if (lowerDetail.includes("bot")) return `Bottom ${period}`;
+      if (lowerDetail.includes("mid")) return `Mid ${period}`;
+      if (lowerDetail.includes("end")) return `End ${period}`;
     }
 
-    // Default short detail provided by ESPN (e.g., "3rd 4:12", "Halftime")
-    if (detail) return detail;
-
-    // Fallback if detail string isn't present
-    return period ? `P${period}` : "LIVE";
+    return detail || (period ? `P${period}` : "LIVE");
   }
 
-  // 3. Pre-Game States
   return "";
 }
 
 /**
- * Helper to check if a given date string matches today's date in local time.
+ * Checks if a given date string matches today's date in local time.
  */
 function isToday(dateString) {
   const gameDate = new Date(dateString);
   const today = new Date();
-
   return (
     gameDate.getFullYear() === today.getFullYear() &&
     gameDate.getMonth() === today.getMonth() &&
@@ -75,74 +64,57 @@ function isToday(dateString) {
 }
 
 /**
- * Helper to format a Date object into ESPN's YYYYMMDD string format.
+ * Fetches true team record from ESPN's primary team endpoint.
  */
-function formatDate(date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}${month}${day}`;
+async function fetchTrueTeamRecord(sport, league, teamId, defaultRecord) {
+  if (!teamId) return defaultRecord;
+
+  const cacheKey = `${sport}-${league}-${teamId}`;
+  if (recordCache.has(cacheKey)) return recordCache.get(cacheKey);
+
+  try {
+    const res = await fetch(
+      `${ESPN_API_BASE}/${sport}/${league}/teams/${teamId}`,
+    );
+    if (!res.ok) return defaultRecord;
+
+    const data = await res.json();
+    const summary =
+      data.team?.record?.items?.[0]?.summary || data.team?.recordSummary;
+
+    if (summary && summary !== "0-0" && summary !== "0-0-0") {
+      recordCache.set(cacheKey, summary);
+      return summary;
+    }
+  } catch (err) {
+    console.warn(`Record fetch failed for team ${teamId}:`, err);
+  }
+
+  return defaultRecord;
 }
 
 /**
- * Helper to get default record based on league/sport.
+ * Resolves a team's record cleanly with direct API fallback.
  */
-function getDefaultRecord(sport, league) {
-  return league?.toLowerCase() === "nhl" || sport?.toLowerCase() === "hockey"
-    ? "0-0-0"
-    : "0-0";
-}
+async function resolveTeamRecord(competitor, sport, league) {
+  const defaultRecord =
+    league?.toLowerCase() === "nhl" || sport?.toLowerCase() === "hockey"
+      ? "0-0-0"
+      : "0-0";
+  const summary = competitor?.records?.[0]?.summary || competitor?.record;
 
-/**
- * Fallback loader using the team-specific Schedule API.
- */
-async function loadFromSchedule(id, sport, league, team) {
-  const element = document.getElementById(id);
-  const url = `${ESPN_API_BASE}/${sport}/${league}/teams/${team}/schedule`;
-
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Schedule API HTTP ${response.status}`);
+  if (summary && summary !== "0-0" && summary !== "0-0-0") {
+    return summary;
   }
 
-  const data = await response.json();
-  const games = data.events || [];
-  const now = Date.now();
-
-  const game =
-    games.find((g) => g.competitions?.[0]?.status?.type?.state === "in") ||
-    games.find((g) => new Date(g.date).getTime() >= now) ||
-    games[games.length - 1];
-
-  if (!game) {
-    element.textContent = "No games.";
-    return;
-  }
-
-  // Attach root-level team record summary to the event competitors if missing
-  const rootRecord =
-    data.team?.recordSummary || data.requestedItem?.record?.summary;
-  if (rootRecord && game.competitions?.[0]?.competitors) {
-    const targetTeam = String(team).toLowerCase();
-    game.competitions[0].competitors.forEach((comp) => {
-      const cTeam = comp.team || {};
-      const isTarget =
-        String(cTeam.id).toLowerCase() === targetTeam ||
-        String(cTeam.abbreviation).toLowerCase() === targetTeam;
-
-      if (isTarget && (!comp.records || comp.records.length === 0)) {
-        comp.records = [{ type: "overall", summary: rootRecord }];
-      }
-    });
-  }
-
-  renderGame(element, game, sport, league);
+  const teamId = competitor?.team?.id || competitor?.id;
+  return await fetchTrueTeamRecord(sport, league, teamId, defaultRecord);
 }
 
 /**
  * Render matchup into DOM target element.
  */
-function renderGame(element, game, sport, league) {
+async function renderGame(element, game, sport, league) {
   const competition = game.competitions?.[0];
   if (!competition) {
     element.textContent = "Unable to load.";
@@ -158,20 +130,10 @@ function renderGame(element, game, sport, league) {
     return;
   }
 
-  const defaultRecord = getDefaultRecord(sport, league);
-
-  // Extract record summary, falling back to default record format if missing
-  const awayRecord =
-    away.records?.find((r) => r.type === "total" || r.type === "overall")
-      ?.summary ||
-    away.records?.[0]?.summary ||
-    defaultRecord;
-
-  const homeRecord =
-    home.records?.find((r) => r.type === "total" || r.type === "overall")
-      ?.summary ||
-    home.records?.[0]?.summary ||
-    defaultRecord;
+  const [awayRecord, homeRecord] = await Promise.all([
+    resolveTeamRecord(away, sport, league),
+    resolveTeamRecord(home, sport, league),
+  ]);
 
   const gameDate = new Date(game.date);
   const state = competition.status?.type?.state;
@@ -192,10 +154,8 @@ function renderGame(element, game, sport, league) {
 
   const awayScore = isUpcoming ? "—" : parseScore(away);
   const homeScore = isUpcoming ? "—" : parseScore(home);
-
   const gameStatusText = getStatusDisplay(competition.status);
 
-  // Build bottom info section: Hide date/time if live or final
   let infoContentHTML = "";
   if (isLive) {
     infoContentHTML = `<div class="status-live">${gameStatusText}</div>`;
@@ -208,7 +168,6 @@ function renderGame(element, game, sport, league) {
     `;
   }
 
-  // Ensure inner element is flexible to support equal-height cards
   element.classList.add("d-flex", "flex-column", "h-100");
 
   element.innerHTML = `
@@ -239,25 +198,48 @@ function renderGame(element, game, sport, league) {
 }
 
 /**
- * Primary loader: Checks today's Scoreboard API first.
- * Reverts to Schedule API if no game is played today, or on HTTP errors.
+ * Fallback loader using the team-specific Schedule API.
  */
-async function load(id, sport, league, team) {
+async function loadFromSchedule(id, sport, league, team) {
   const element = document.getElementById(id);
+  const response = await fetch(
+    `${ESPN_API_BASE}/${sport}/${league}/teams/${team}/schedule`,
+  );
 
-  if (!element) {
-    console.warn(`Unable to find element with ID "${id}".`);
+  if (!response.ok) {
+    throw new Error(`Schedule API HTTP ${response.status}`);
+  }
+
+  const data = await response.json();
+  const games = data.events || [];
+  const now = Date.now();
+
+  const game =
+    games.find((g) => g.competitions?.[0]?.status?.type?.state === "in") ||
+    games.find((g) => new Date(g.date).getTime() >= now) ||
+    games[games.length - 1];
+
+  if (!game) {
+    element.textContent = "No games.";
     return;
   }
 
+  await renderGame(element, game, sport, league);
+}
+
+/**
+ * Primary loader: Checks today's Scoreboard API first, then falls back to Schedule API.
+ */
+async function load(id, sport, league, team) {
+  const element = document.getElementById(id);
+  if (!element) return;
+
   try {
-    const url = `${ESPN_API_BASE}/${sport}/${league}/scoreboard`;
-    const response = await fetch(url);
+    const response = await fetch(
+      `${ESPN_API_BASE}/${sport}/${league}/scoreboard`,
+    );
 
     if (!response.ok) {
-      console.warn(
-        `Scoreboard HTTP ${response.status} for ${sport}/${league}. Reverting to schedule.`,
-      );
       return await loadFromSchedule(id, sport, league, team);
     }
 
@@ -277,14 +259,11 @@ async function load(id, sport, league, team) {
     });
 
     if (teamGame && isToday(teamGame.date)) {
-      return renderGame(element, teamGame, sport, league);
+      return await renderGame(element, teamGame, sport, league);
     }
 
     return await loadFromSchedule(id, sport, league, team);
   } catch (error) {
-    console.warn(
-      `Scoreboard fetch failed (${error.message}). Reverting to schedule...`,
-    );
     try {
       await loadFromSchedule(id, sport, league, team);
     } catch (fallbackError) {
