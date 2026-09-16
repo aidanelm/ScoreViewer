@@ -85,6 +85,15 @@ function formatDate(date) {
 }
 
 /**
+ * Helper to get default record based on league/sport.
+ */
+function getDefaultRecord(sport, league) {
+  return league?.toLowerCase() === "nhl" || sport?.toLowerCase() === "hockey"
+    ? "0-0-0"
+    : "0-0";
+}
+
+/**
  * Fallback loader using the team-specific Schedule API.
  */
 async function loadFromSchedule(id, sport, league, team) {
@@ -110,13 +119,30 @@ async function loadFromSchedule(id, sport, league, team) {
     return;
   }
 
-  renderGame(element, game);
+  // Attach root-level team record summary to the event competitors if missing
+  const rootRecord =
+    data.team?.recordSummary || data.requestedItem?.record?.summary;
+  if (rootRecord && game.competitions?.[0]?.competitors) {
+    const targetTeam = String(team).toLowerCase();
+    game.competitions[0].competitors.forEach((comp) => {
+      const cTeam = comp.team || {};
+      const isTarget =
+        String(cTeam.id).toLowerCase() === targetTeam ||
+        String(cTeam.abbreviation).toLowerCase() === targetTeam;
+
+      if (isTarget && (!comp.records || comp.records.length === 0)) {
+        comp.records = [{ type: "overall", summary: rootRecord }];
+      }
+    });
+  }
+
+  renderGame(element, game, sport, league);
 }
 
 /**
  * Render matchup into DOM target element.
  */
-function renderGame(element, game) {
+function renderGame(element, game, sport, league) {
   const competition = game.competitions?.[0];
   if (!competition) {
     element.textContent = "Unable to load.";
@@ -132,9 +158,25 @@ function renderGame(element, game) {
     return;
   }
 
+  const defaultRecord = getDefaultRecord(sport, league);
+
+  // Extract record summary, falling back to default record format if missing
+  const awayRecord =
+    away.records?.find((r) => r.type === "total" || r.type === "overall")
+      ?.summary ||
+    away.records?.[0]?.summary ||
+    defaultRecord;
+
+  const homeRecord =
+    home.records?.find((r) => r.type === "total" || r.type === "overall")
+      ?.summary ||
+    home.records?.[0]?.summary ||
+    defaultRecord;
+
   const gameDate = new Date(game.date);
   const state = competition.status?.type?.state;
   const isLive = state === "in";
+  const isFinal = state === "post";
   const isUpcoming = state === "pre";
 
   const date = gameDate.toLocaleDateString(undefined, {
@@ -153,10 +195,12 @@ function renderGame(element, game) {
 
   const gameStatusText = getStatusDisplay(competition.status);
 
-  // Build bottom info section: Hide date/time if live
+  // Build bottom info section: Hide date/time if live or final
   let infoContentHTML = "";
   if (isLive) {
     infoContentHTML = `<div class="status-live">${gameStatusText}</div>`;
+  } else if (isFinal) {
+    infoContentHTML = `<div class="game-status">${gameStatusText}</div>`;
   } else {
     infoContentHTML = `
       <div>${date} · ${time}</div>
@@ -164,26 +208,31 @@ function renderGame(element, game) {
     `;
   }
 
+  // Ensure inner element is flexible to support equal-height cards
+  element.classList.add("d-flex", "flex-column", "h-100");
+
   element.innerHTML = `
-    <div class="d-flex align-items-center">
-      <div class="team text-center">
+    <div class="d-flex align-items-center justify-content-between">
+      <div class="team text-center flex-fill">
         <div class="score">${awayScore}</div>
         <div class="team-name-large">
           ${away.team.shortDisplayName || away.team.displayName}
         </div>
+        <div class="team-record small">${awayRecord}</div>
       </div>
 
-      <div class="at">@</div>
+      <div class="at px-2">@</div>
 
-      <div class="team text-center">
+      <div class="team text-center flex-fill">
         <div class="score">${homeScore}</div>
         <div class="team-name-large">
           ${home.team.shortDisplayName || home.team.displayName}
         </div>
+        <div class="team-record small">${homeRecord}</div>
       </div>
     </div>
 
-    <div class="game-info text-center mt-2">
+    <div class="game-info text-center mt-auto pt-2">
       ${infoContentHTML}
     </div>
   `;
@@ -228,7 +277,7 @@ async function load(id, sport, league, team) {
     });
 
     if (teamGame && isToday(teamGame.date)) {
-      return renderGame(element, teamGame);
+      return renderGame(element, teamGame, sport, league);
     }
 
     return await loadFromSchedule(id, sport, league, team);
