@@ -20,6 +20,47 @@ function parseScore(competitor) {
 }
 
 /**
+ * Helper to generate status text (Final, Innings, Quarters/Periods).
+ * Returns empty string if the game hasn't started yet.
+ */
+function getStatusDisplay(status) {
+  const state = status?.type?.state;
+  const detail = status?.type?.shortDetail || status?.type?.detail || "";
+
+  // 1. Post-Game States
+  if (state === "post") {
+    return detail.includes("OT") ? "FINAL / OT" : "FINAL";
+  }
+
+  // 2. In-Game (Live) States
+  if (state === "in") {
+    const period = status?.period;
+
+    // Baseball logic (Innings)
+    if (
+      detail.toLowerCase().includes("top") ||
+      detail.toLowerCase().includes("bot") ||
+      detail.toLowerCase().includes("mid") ||
+      detail.toLowerCase().includes("end")
+    ) {
+      if (detail.toLowerCase().includes("top")) return `Top ${period}`;
+      if (detail.toLowerCase().includes("bot")) return `Bottom ${period}`;
+      if (detail.toLowerCase().includes("mid")) return `Mid ${period}`;
+      if (detail.toLowerCase().includes("end")) return `End ${period}`;
+    }
+
+    // Default short detail provided by ESPN (e.g., "3rd 4:12", "Halftime")
+    if (detail) return detail;
+
+    // Fallback if detail string isn't present
+    return period ? `P${period}` : "LIVE";
+  }
+
+  // 3. Pre-Game States
+  return "";
+}
+
+/**
  * Helper to check if a given date string matches today's date in local time.
  */
 function isToday(dateString) {
@@ -92,7 +133,9 @@ function renderGame(element, game) {
   }
 
   const gameDate = new Date(game.date);
-  const now = new Date();
+  const state = competition.status?.type?.state;
+  const isLive = state === "in";
+  const isUpcoming = state === "pre";
 
   const date = gameDate.toLocaleDateString(undefined, {
     weekday: "short",
@@ -105,10 +148,21 @@ function renderGame(element, game) {
     minute: "2-digit",
   });
 
-  const isUpcoming = gameDate > now && competition.status?.type?.state !== "in";
-
   const awayScore = isUpcoming ? "—" : parseScore(away);
   const homeScore = isUpcoming ? "—" : parseScore(home);
+
+  const gameStatusText = getStatusDisplay(competition.status);
+
+  // Build bottom info section: Hide date/time if live
+  let infoContentHTML = "";
+  if (isLive) {
+    infoContentHTML = `<div class="status-live">${gameStatusText}</div>`;
+  } else {
+    infoContentHTML = `
+      <div>${date} · ${time}</div>
+      ${gameStatusText ? `<div class="game-status">${gameStatusText}</div>` : ""}
+    `;
+  }
 
   element.innerHTML = `
     <div class="d-flex align-items-center">
@@ -129,15 +183,15 @@ function renderGame(element, game) {
       </div>
     </div>
 
-    <div class="game-info">
-      ${date} · ${time}
+    <div class="game-info text-center mt-2">
+      ${infoContentHTML}
     </div>
   `;
 }
 
 /**
  * Primary loader: Checks today's Scoreboard API first.
- * Reverts to Schedule API if no game is played *today*, or on HTTP errors.
+ * Reverts to Schedule API if no game is played today, or on HTTP errors.
  */
 async function load(id, sport, league, team) {
   const element = document.getElementById(id);
