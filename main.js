@@ -171,8 +171,8 @@ async function renderGame(element, game, sport, league) {
   element.classList.add("d-flex", "flex-column", "h-100");
 
   element.innerHTML = `
-    <div class="d-flex align-items-center justify-content-between">
-      <div class="team text-center flex-fill">
+    <div class="d-grid align-items-center" style="grid-template-columns: 1fr auto 1fr;">
+      <div class="team text-center">
         <div class="score">${awayScore}</div>
         <div class="team-name-large">
           ${away.team.shortDisplayName || away.team.displayName}
@@ -182,7 +182,7 @@ async function renderGame(element, game, sport, league) {
 
       <div class="at px-2">@</div>
 
-      <div class="team text-center flex-fill">
+      <div class="team text-center">
         <div class="score">${homeScore}</div>
         <div class="team-name-large">
           ${home.team.shortDisplayName || home.team.displayName}
